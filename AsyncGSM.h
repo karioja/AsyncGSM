@@ -16,11 +16,6 @@ typedef unsigned long time_t;
 #define prog_char_strcmp(a, b)                                  strcmp_P((a), (b))
 #define prog_char_strstr(a, b)                                  strstr_P((a), (b))
 
-
-#define DebugStream Serial
-#define DEBUG_PRINT(...) DebugStream.print(__VA_ARGS__)
-#define DEBUG_PRINTLN(...) DebugStream.println(__VA_ARGS__)
-
 /* Useful Constants */
 #define SECS_PER_MIN  (60UL)
 #define SECS_PER_HOUR (3600UL)
@@ -129,10 +124,13 @@ class AsyncGSM
  public:
   AsyncGSM(int8_t rst);
   uint8_t initialize(Stream &serial);
+  void resetModemState();
+  void setDebugStream(Stream &debugStream);
   void process();
   void queueAtCommand(GSMFlashStringPtr command);
   void queueAtCommand(char * command);
   uint8_t isModemIdle();
+  uint8_t isModemError();
   void connect(char * ipaddress, int port, int connection, int type);
   void disconnect(int connection);
   uint8_t isConnected(int connection);
@@ -150,13 +148,14 @@ class AsyncGSM
   void processIncomingModemByte (const byte inByte);
   void process_modem_data (char * data);
   GSMFlashStringPtr ok_reply;
-  ConnectionState connectionState[6];
+  ConnectionState connectionState[1];
  private:  
   uint8_t writeBuffer(CircularBuffer * buffer, char data);
   uint8_t readBuffer(CircularBuffer * buffer, char * data);
   uint8_t bufferSize(CircularBuffer * buffer);
   uint8_t parseConnectionNumber(char * data);
   Stream *mySerial;
+  Stream *debugStream;
   time_t parseTime(char * timeString);
   char input_modem_line [MAX_INPUT];
   uint8_t input_modem_pos = 0;
@@ -185,6 +184,7 @@ class AsyncGSM
   uint32_t last_battery_update;
   uint32_t last_creg;
   uint32_t last_udp_send;
+  uint32_t last_command;
   ShortMessage messageBuffer;
   ShortMessage outboundMessage;
   time_t last_network_time;

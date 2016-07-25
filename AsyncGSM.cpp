@@ -5,7 +5,8 @@
 #include "Arduino.h"
 #include "AsyncGSM.h"
 
-
+#define GSM_DEBUG_PRINT(...) debugStream->print(__VA_ARGS__)
+#define GSM_DEBUG_PRINTLN(...) debugStream->println(__VA_ARGS__)
 
 AsyncGSM::AsyncGSM(int8_t rst)
 {
@@ -19,9 +20,29 @@ AsyncGSM::AsyncGSM(int8_t rst)
   currentconnection = -1;
 }
 
+void AsyncGSM::resetModemState() {
+  echo = 0;
+  cscs = 0;
+  clip = 0;
+  cmgf = 0;
+  cnmi = 0;
+  cipmux = 0;
+  creg = 0;
+  modem_state = STATE_IDLE;
+  autobauding = 0;
+  command_state = COMMAND_NONE;
+  gprs_state = GPRS_STATE_UNKNOWN;
+  currentconnection = -1;
+}
+
 uint8_t AsyncGSM::initialize(Stream &serial)
 {
   mySerial = &serial;
+}
+
+void AsyncGSM::setDebugStream(Stream &stream)
+{
+  debugStream = &stream;
 }
 
 uint8_t AsyncGSM::writeBuffer(CircularBuffer * buffer, char data) {
@@ -107,6 +128,13 @@ void AsyncGSM::process() {
     processIncomingModemByte(mySerial->read());
   }
 
+  // check for timeout
+  if (modem_state == STATE_WAITING_REPLY && millis() > last_command + 240000) {
+    GSM_DEBUG_PRINTLN(F("TIMEOUT"));
+    modem_state = STATE_IDLE;
+    //delay(10000);
+  }
+  
   if (modem_state == STATE_IDLE && !autobauding) {
     queueAtCommand(F("AT"));
     return;
@@ -288,6 +316,9 @@ uint8_t AsyncGSM::isModemIdle() {
   return modem_state == STATE_IDLE;
 }
 
+uint8_t AsyncGSM::isModemError() {
+  return modem_state == STATE_ERROR;
+}
 
 void AsyncGSM::connect(char * data, int port, int connection, int type) {
   memcpy(connectionState[connection].address, data, strlen(data) + 1);
@@ -306,22 +337,24 @@ uint8_t AsyncGSM::writeData(char * data, int len, int connection) {
   for (int i = 0; i < len; i++) {
     writeBuffer(&connectionState[connection].outboundCircular, data[i]);
   }
-  DEBUG_PRINTLN(connectionState[connection].outboundCircular.buffer);
-  DEBUG_PRINTLN(bufferSize(&connectionState[connection].outboundCircular));
+  GSM_DEBUG_PRINTLN(connectionState[connection].outboundCircular.buffer);
+  GSM_DEBUG_PRINTLN(bufferSize(&connectionState[connection].outboundCircular));
 }
 
 void AsyncGSM::queueAtCommand(char * command) {
-  DEBUG_PRINT(F("--> ")); DEBUG_PRINTLN(command);
+  GSM_DEBUG_PRINT(F("--> ")); GSM_DEBUG_PRINTLN(command);
   mySerial->println(command);
+  last_command = millis();
   modem_state = STATE_WAITING_REPLY;
-  DEBUG_PRINTLN(F("STATE_WAITING_REPLY"));
+  GSM_DEBUG_PRINTLN(F("STATE_WAITING_REPLY"));
 }
 
 void AsyncGSM::queueAtCommand(GSMFlashStringPtr command) {
-  DEBUG_PRINT(F("--> ")); DEBUG_PRINTLN(command);
+  GSM_DEBUG_PRINT(F("--> ")); GSM_DEBUG_PRINTLN(command);
   mySerial->println(command);
+  last_command = millis();
   modem_state = STATE_WAITING_REPLY;
-  DEBUG_PRINTLN(F("STATE_WAITING_REPLY"));
+  GSM_DEBUG_PRINTLN(F("STATE_WAITING_REPLY"));
 }
 
 time_t AsyncGSM::getCurrentTime() {
@@ -424,7 +457,7 @@ time_t AsyncGSM::parseTime(char * data) {
 }
 
 void AsyncGSM::process_modem_data (char * data) {
-  DEBUG_PRINTLN(data);
+  GSM_DEBUG_PRINTLN(data);
 
   if (prog_char_strstr(data, (prog_char *)F("ATE")) != 0) {
     command_state = COMMAND_ATE;
@@ -509,8 +542,8 @@ void AsyncGSM::process_modem_data (char * data) {
     if (strstr(data, "+CCLK:") != 0) {
       last_network_time = parseTime(data + 8);
       last_network_time_update = millis();
-      DEBUG_PRINT("current_time: ");
-      DEBUG_PRINTLN(last_network_time);
+      GSM_DEBUG_PRINT("current_time: ");
+      GSM_DEBUG_PRINTLN(last_network_time);
     }
   }
   
@@ -518,22 +551,22 @@ void AsyncGSM::process_modem_data (char * data) {
     memcpy(messageBuffer.message, data, strlen(data) + 1);
     messageBuffer.available = 1;
     modem_state = STATE_IDLE;
-    DEBUG_PRINTLN(messageBuffer.msisdn);
-    DEBUG_PRINTLN(messageBuffer.receive_time);
-    DEBUG_PRINTLN(messageBuffer.message);
-    DEBUG_PRINTLN("STATE_IDLE");
+    GSM_DEBUG_PRINTLN(messageBuffer.msisdn);
+    GSM_DEBUG_PRINTLN(messageBuffer.receive_time);
+    GSM_DEBUG_PRINTLN(messageBuffer.message);
+    GSM_DEBUG_PRINTLN("STATE_IDLE");
   }
 
   if (command_state == COMMAND_WRITE_CMGS) {
     if (strstr(data, "OK") != 0) {
       modem_state = STATE_IDLE;
-      DEBUG_PRINTLN("STATE_IDLE");
+      GSM_DEBUG_PRINTLN("STATE_IDLE");
     }
 
     if (strstr(data, ">") != 0) {
-      DEBUG_PRINTLN(strlen(outboundMessage.message));
-      DEBUG_PRINT(F("--> ")); 
-      DEBUG_PRINTLN(outboundMessage.message);
+      GSM_DEBUG_PRINTLN(strlen(outboundMessage.message));
+      GSM_DEBUG_PRINT(F("--> ")); 
+      GSM_DEBUG_PRINTLN(outboundMessage.message);
       mySerial->write(outboundMessage.message, strlen(outboundMessage.message));
       mySerial->write("\x1A");
       mySerial->flush();
@@ -558,11 +591,11 @@ void AsyncGSM::process_modem_data (char * data) {
       // write data
       char data[16];
       int len = bufferSize(&connectionState[currentconnection].outboundCircular);
-      DEBUG_PRINT(F("Circular buffer size: "));
-      DEBUG_PRINTLN(len);
+      GSM_DEBUG_PRINT(F("Circular buffer size: "));
+      GSM_DEBUG_PRINTLN(len);
       for (int i = 0; i < len; i++) {
 	readBuffer(&connectionState[currentconnection].outboundCircular, data + i);
-	DEBUG_PRINT(data[i]);
+	GSM_DEBUG_PRINT(data[i]);
       }
       mySerial->write(data, len);
       mySerial->flush();
@@ -572,27 +605,27 @@ void AsyncGSM::process_modem_data (char * data) {
     if (strstr(data, "SEND OK") != 0) {
       modem_state = STATE_IDLE;
       currentconnection = -1;
-      DEBUG_PRINTLN(F("STATE_IDLE"));
+      GSM_DEBUG_PRINTLN(F("STATE_IDLE"));
       return;
     }
   }
   
   if (command_state == COMMAND_WRITE_CIPSTART) {
-    DEBUG_PRINTLN("COMMAND_WRITE_CIPSTART2");
+    GSM_DEBUG_PRINTLN("COMMAND_WRITE_CIPSTART2");
     
     if (strstr(data, "CONNECT OK") != 0) {
       connectionState[currentconnection].connectionState = GPRS_STATE_CONNECT_OK;
       modem_state = STATE_IDLE;
       currentconnection = -1;
-      DEBUG_PRINTLN(F("STATE_IDLE"));
+      GSM_DEBUG_PRINTLN(F("STATE_IDLE"));
       return;
     } else if (strstr(data, "CONNECT FAIL") != 0) {
       // tcp or udp connection failed
       uint8_t connectionNumber = parseConnectionNumber(data);
-      DEBUG_PRINTLN(connectionNumber);
+      GSM_DEBUG_PRINTLN(connectionNumber);
       connectionState[0].connectionState = GPRS_STATE_IP_INITIAL;
       modem_state = STATE_IDLE;
-      DEBUG_PRINTLN(F("STATE_IDLE"));
+      GSM_DEBUG_PRINTLN(F("STATE_IDLE"));
     }
 
     if (strstr(data, "OK") != 0) {
@@ -607,7 +640,7 @@ void AsyncGSM::process_modem_data (char * data) {
       uint8_t connectionNumber = parseConnectionNumber(data);
       connectionState[0].connectionState = GPRS_STATE_IP_INITIAL;
       modem_state = STATE_IDLE;
-      DEBUG_PRINTLN(F("STATE_IDLE"));
+      GSM_DEBUG_PRINTLN(F("STATE_IDLE"));
     }
   }
   
@@ -628,13 +661,13 @@ void AsyncGSM::process_modem_data (char * data) {
   if (command_state == COMMAND_CIPSHUT && strstr(data, "SHUT OK") != 0) {
     gprs_state = GPRS_STATE_IP_INITIAL;
     modem_state = STATE_IDLE;
-    DEBUG_PRINTLN(F("STATE_IDLE"));
+    GSM_DEBUG_PRINTLN(F("STATE_IDLE"));
   }
 
   if (command_state == COMMAND_CIFSR && strlen(data) > 0) {
     gprs_state = GPRS_STATE_IP_STATUS;
     modem_state = STATE_IDLE;
-    DEBUG_PRINTLN(F("STATE_IDLE"));
+    GSM_DEBUG_PRINTLN(F("STATE_IDLE"));
   }
   
   if (command_state == COMMAND_TEST_CIPMUX && strstr(data, "+CIPMUX:") != 0) {
@@ -692,7 +725,7 @@ void AsyncGSM::process_modem_data (char * data) {
     }
     
     modem_state = STATE_IDLE;
-    DEBUG_PRINTLN(F("STATE_IDLE"));
+    GSM_DEBUG_PRINTLN(F("STATE_IDLE"));
   }
 
   if (strstr(data, "RING") != 0) {
@@ -707,7 +740,10 @@ void AsyncGSM::process_modem_data (char * data) {
   
   if (strstr(data, "ERROR") != 0) {
     modem_state = STATE_ERROR;
-    DEBUG_PRINTLN(F("STATE_ERROR"));
+    GSM_DEBUG_PRINTLN(F("STATE_ERROR"));
+
+    // reset modem
+
   }
 
   if (strstr(data, "CLOSED") != 0) {
@@ -721,8 +757,8 @@ void AsyncGSM::process_modem_data (char * data) {
     data[10] = NULL;
     uint8_t connectionNumber = atoi(data + 9);
     uint16_t availableData = atoi(data + 11);
-    DEBUG_PRINTLN(connectionNumber);
-    DEBUG_PRINTLN(availableData);
+    GSM_DEBUG_PRINTLN(connectionNumber);
+    GSM_DEBUG_PRINTLN(availableData);
     command_state = COMMAND_UCR_RECEIVE;
     return;
   }
