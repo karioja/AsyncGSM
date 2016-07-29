@@ -97,7 +97,7 @@ typedef struct  {
 
 
 typedef struct {
-  char buffer[32];
+  char buffer[128];
   size_t head;
   size_t tail;
 } CircularBuffer;
@@ -127,8 +127,8 @@ class AsyncGSM
   void resetModemState();
   void setDebugStream(Stream &debugStream);
   void process();
-  void queueAtCommand(GSMFlashStringPtr command);
-  void queueAtCommand(char * command);
+  void queueAtCommand(GSMFlashStringPtr command, uint32_t timeout);
+  void queueAtCommand(char * command, uint32_t timeout);
   uint8_t isModemIdle();
   uint8_t isModemError();
   void connect(char * ipaddress, int port, int connection, int type);
@@ -189,6 +189,7 @@ class AsyncGSM
   ShortMessage outboundMessage;
   time_t last_network_time;
   uint32_t last_network_time_update;
+  uint32_t command_timeout;
   char callerId[14];
 };
 
