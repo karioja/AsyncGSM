@@ -83,7 +83,7 @@ uint8_t AsyncGSM::bufferSize(CircularBuffer * buffer) {
     return buffer->head - buffer->tail;
   }
   if (buffer->head < buffer->tail) {
-    return 32 - buffer->tail + buffer->head;
+    return GSM_BUFFER_SIZE - buffer->tail + buffer->head;
   }
   return 0;
 }
@@ -601,8 +601,8 @@ void AsyncGSM::process_modem_data (char * data) {
   if (command_state == COMMAND_WRITE_CIPSEND) {
     if (strstr(data, ">") != 0) {
       // write data
-      char data[16];
       int len = bufferSize(&connectionState[currentconnection].outboundCircular);
+      char data[len];
       GSM_DEBUG_PRINT(F("Circular buffer size: "));
       GSM_DEBUG_PRINTLN(len);
       for (int i = 0; i < len; i++) {
@@ -772,6 +772,7 @@ void AsyncGSM::process_modem_data (char * data) {
     GSM_DEBUG_PRINTLN(connectionNumber);
     GSM_DEBUG_PRINTLN(availableData);
     command_state = COMMAND_UCR_RECEIVE;
+    GSM_DEBUG_PRINTLN(F("COMMAND_UCR_RECEIVE"))
     return;
   }
 

@@ -16,6 +16,8 @@ typedef unsigned long time_t;
 #define prog_char_strcmp(a, b)                                  strcmp_P((a), (b))
 #define prog_char_strstr(a, b)                                  strstr_P((a), (b))
 
+#define GSM_BUFFER_SIZE 128
+
 /* Useful Constants */
 #define SECS_PER_MIN  (60UL)
 #define SECS_PER_HOUR (3600UL)
@@ -97,7 +99,7 @@ typedef struct  {
 
 
 typedef struct {
-  char buffer[128];
+  char buffer[GSM_BUFFER_SIZE];
   size_t head;
   size_t tail;
 } CircularBuffer;
