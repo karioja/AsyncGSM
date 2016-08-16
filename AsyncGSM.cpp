@@ -88,8 +88,14 @@ uint8_t AsyncGSM::bufferSize(CircularBuffer * buffer) {
   return 0;
 }
 
+
+
 uint8_t AsyncGSM::dataAvailable(int connection) {
-  return bufferSize(&connectionState[0].inboundCircular);
+  return bufferSize(&connectionState[connection].inboundCircular);
+}
+
+uint8_t AsyncGSM::outboundBufferSize(int connection) {
+  return bufferSize(&connectionState[connection].outboundCircular);
 }
 
 uint8_t AsyncGSM::messageAvailable() {
@@ -142,30 +148,35 @@ void AsyncGSM::process() {
   }
   
   if (modem_state == STATE_IDLE && !echo && autobauding) {
-    queueAtCommand(F("ATE1"), 5000);
+    queueAtCommand(F("ATE0"), 5000);
+    command_state = COMMAND_ATE;
     return;
   }
 
   if (modem_state == STATE_IDLE && incomingcall && answerincomingcall) {
     queueAtCommand(F("ATA"), 5000);
+    command_state = COMMAND_ATA;
     return;
   }
 
   if (modem_state == STATE_IDLE && (millis() > last_csq_update + 90000) && autobauding) {
     queueAtCommand(F("AT+CSQ"), 5000);
     last_csq_update = millis();
+    command_state = COMMAND_CSQ;
     return;
   }
   
   if (modem_state == STATE_IDLE && (millis() > last_battery_update + 60000) && autobauding) {
     queueAtCommand(F("AT+CBC"), 5000);
     last_battery_update = millis();
+    command_state = COMMAND_CBC;
     return;
   }
 
   if (modem_state == STATE_IDLE && (millis() > last_creg + 60000) && autobauding && creg < 2) {
     queueAtCommand(F("AT+CREG?"), 5000);
     last_creg = millis();
+    command_state = COMMAND_TEST_CREG;
     return;
   } else if (creg < 2) {
     return;
@@ -173,58 +184,75 @@ void AsyncGSM::process() {
   
   if (modem_state == STATE_IDLE && !clts && autobauding) {
     queueAtCommand(F("AT+CLTS=1"), 5000);
+    command_state = COMMAND_SET_CLTS;
     return;
   }
 
   if (modem_state == STATE_IDLE && !clip && autobauding) {
     queueAtCommand(F("AT+CLIP=1"), 5000);
+    command_state = COMMAND_WRITE_CLIP;
     return;
   }
   
   if (modem_state == STATE_IDLE && cipmux == 1 && autobauding && creg == 2) {
     queueAtCommand(F("AT+CIPMUX=1"), 5000);
+    command_state = COMMAND_WRITE_CIPMUX;
     return;
   }
 
   if (modem_state == STATE_IDLE && !cipmux && autobauding && creg == 2) {
     queueAtCommand(F("AT+CIPMUX?"), 5000);
+    command_state = COMMAND_TEST_CIPMUX;
     return;
   }
 
-  if (modem_state == STATE_IDLE && gprs_state == GPRS_STATE_UNKNOWN && autobauding && creg == 2) {
+  if (modem_state == STATE_IDLE && gprs_state == GPRS_STATE_UNKNOWN && autobauding && creg == 2 && enable_gprs) {
     queueAtCommand(F("AT+CIPSHUT"), 10000);
+    command_state = COMMAND_CIPSHUT;
+    return;
+  }
+
+  if (modem_state == STATE_IDLE && (gprs_state != GPRS_STATE_IP_INITIAL) && autobauding && creg == 2 && !enable_gprs) {
+    queueAtCommand(F("AT+CIPSHUT"), 10000);
+    command_state = COMMAND_CIPSHUT;
     return;
   }
   
-  if (modem_state == STATE_IDLE && gprs_state == GPRS_STATE_IP_INITIAL && autobauding && creg == 2) {
+  if (modem_state == STATE_IDLE && gprs_state == GPRS_STATE_IP_INITIAL && autobauding && creg == 2 && enable_gprs) {
     queueAtCommand(F("AT+CSTT=\"internet.saunalahti\",\"\",\"\""), 10000);
+    command_state = COMMAND_SET_CSTT;
     return;
   }
 
   if (modem_state == STATE_IDLE && !cnmi && autobauding) {
     queueAtCommand(F("AT+CNMI?"), 10000);
+    command_state = COMMAND_TEST_CNMI;
     return;
   }
 
   if (modem_state == STATE_IDLE && !cmgf && autobauding) {
     queueAtCommand(F("AT+CMGF?"), 10000);
+    command_state = COMMAND_TEST_CMGF;
     return;
   }
 
   if (modem_state == STATE_IDLE && cmgf == 1 && autobauding) {
     // text mode sms
     queueAtCommand(F("AT+CMGF=1"), 5000);
+    command_state = COMMAND_WRITE_CMGF;
     return;
   }
 
   if (modem_state == STATE_IDLE && !cscs && autobauding) {
     // text mode sms
     queueAtCommand(F("AT+CSCS=\"8859-1\""), 5000);
+    command_state = COMMAND_WRITE_CSCS;
     return;
   }
   
   if (modem_state == STATE_IDLE && cnmi == 1 && autobauding) {
     queueAtCommand(F("AT+CNMI=2,2,0,0,0"), 60000);
+    command_state = COMMAND_WRITE_CNMI;
     return;
   }
 
@@ -232,6 +260,7 @@ void AsyncGSM::process() {
   if (modem_state == STATE_IDLE && (millis() > last_time_update + 120000) && autobauding) {
     queueAtCommand(F("AT+CCLK?"), 5000);
     last_time_update = millis();
+    command_state = COMMAND_TEST_CCLK;
     return;
   }
 
@@ -239,13 +268,15 @@ void AsyncGSM::process() {
 
 
   
-  if (modem_state == STATE_IDLE && gprs_state == GPRS_STATE_IP_START && autobauding && creg == 2) {
+  if (modem_state == STATE_IDLE && gprs_state == GPRS_STATE_IP_START && autobauding && creg == 2 && enable_gprs) {
     queueAtCommand(F("AT+CIICR"), 120000);
+    command_state = COMMAND_SET_CIICR;
     return;
   }
 
-  if (modem_state == STATE_IDLE && gprs_state == GPRS_STATE_IP_GPRSACT && autobauding && creg == 2) {
+  if (modem_state == STATE_IDLE && gprs_state == GPRS_STATE_IP_GPRSACT && autobauding && creg == 2 && enable_gprs) {
     queueAtCommand(F("AT+CIFSR"), 120000);
+    command_state = COMMAND_CIFSR;
     return;
   }
 
@@ -256,7 +287,8 @@ void AsyncGSM::process() {
 	creg == 2 &&
 	strlen(connectionState[i].address) > 0 &&
 	connectionState[i].port != 0 &&
-	connectionState[i].connect) {
+	connectionState[i].connect &&
+	enable_gprs) {
       char command[32];
       sprintf(command, "AT+CIPSTART=%u,\"%s\",\"%s\",%u",
 	      i,
@@ -264,6 +296,7 @@ void AsyncGSM::process() {
 	      connectionState[i].address,
 	      connectionState[i].port); 
       queueAtCommand(command, 60000);
+      command_state = COMMAND_WRITE_CIPSTART;
       currentconnection = i;
       return;
     }
@@ -274,10 +307,12 @@ void AsyncGSM::process() {
     if (modem_state == STATE_IDLE && 
 	gprs_state == GPRS_STATE_IP_STATUS && 
 	connectionState[j].connectionState == GPRS_STATE_CONNECT_OK && 
-	bufferSize(&connectionState[j].outboundCircular) > 0 && creg == 2) {
+	bufferSize(&connectionState[j].outboundCircular) > 0 && creg == 2 && enable_gprs) {
       char command[16];
-      sprintf(command, "AT+CIPSEND=%u,%u", j, bufferSize(&connectionState[j].outboundCircular));
-      queueAtCommand(command, 10000);
+      connectionState[j].outboundBytes = bufferSize(&connectionState[j].outboundCircular);
+      sprintf(command, "AT+CIPSEND=%u,%u", j, connectionState[j].outboundBytes);
+      queueAtCommand(command, 120000);
+      command_state = COMMAND_WRITE_CIPSEND;
       currentconnection = j;
       return;
     }
@@ -288,10 +323,11 @@ void AsyncGSM::process() {
 	gprs_state == GPRS_STATE_IP_STATUS && 
 	connectionState[i].connectionState == GPRS_STATE_CONNECT_OK && 
 	creg == 2 &&
-	!connectionState[i].connect) {
+	!connectionState[i].connect && enable_gprs) {
       char command[32];
-      sprintf(command, "AT+CIPCLOSE=%u", i);
+      sprintf(command, "AT+CIPCLOSE=%u,0", i);
       queueAtCommand(command, 60000);
+      command_state = COMMAND_WRITE_CIPCLOSE;
       currentconnection = i;
       return;
     }
@@ -311,6 +347,7 @@ void AsyncGSM::process() {
     char command[64];
     sprintf(command, "AT+CMGS=\"%s\"", outboundMessage.msisdn);
     queueAtCommand(command, 10000);
+    command_state = COMMAND_WRITE_CMGS;
   }
 
   
@@ -330,6 +367,26 @@ uint8_t AsyncGSM::isModemError() {
   return modem_state == STATE_ERROR;
 }
 
+uint8_t AsyncGSM::isModemRegistered() {
+  return creg == 2;
+}
+
+void AsyncGSM::enableGprs() {
+  enable_gprs = 1;
+}
+
+void AsyncGSM::disableGprs() {
+  enable_gprs = 0;
+}
+
+uint8_t AsyncGSM::isGprsEnabled() {
+  return gprs_state == GPRS_STATE_IP_STATUS; 
+}
+
+uint8_t AsyncGSM::isGprsDisabled() {
+  return gprs_state == GPRS_STATE_UNKNOWN || gprs_state == GPRS_STATE_IP_INITIAL;
+}
+
 void AsyncGSM::connect(char * data, int port, int connection, int type) {
   memcpy(connectionState[connection].address, data, strlen(data) + 1);
   connectionState[connection].port = port;
@@ -347,8 +404,8 @@ uint8_t AsyncGSM::writeData(char * data, int len, int connection) {
   for (int i = 0; i < len; i++) {
     writeBuffer(&connectionState[connection].outboundCircular, data[i]);
   }
-  GSM_DEBUG_PRINTLN(connectionState[connection].outboundCircular.buffer);
-  GSM_DEBUG_PRINTLN(bufferSize(&connectionState[connection].outboundCircular));
+  //GSM_DEBUG_PRINTLN(connectionState[connection].outboundCircular.buffer);
+  //GSM_DEBUG_PRINTLN(bufferSize(&connectionState[connection].outboundCircular));
 }
 
 void AsyncGSM::queueAtCommand(char * command, uint32_t timeout) {
@@ -469,64 +526,10 @@ time_t AsyncGSM::parseTime(char * data) {
 }
 
 void AsyncGSM::process_modem_data (char * data) {
+  GSM_DEBUG_PRINT(F("<-- "));
   GSM_DEBUG_PRINTLN(data);
 
-  if (prog_char_strstr(data, (prog_char *)F("ATE")) != 0) {
-    command_state = COMMAND_ATE;
-  } else if (prog_char_strstr(data, (prog_char *)F("ATA")) != 0) {
-    command_state = COMMAND_ATA;
-    return;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CIPMUX=")) != 0) {
-    command_state = COMMAND_WRITE_CIPMUX;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CSTT=")) != 0) {
-    command_state = COMMAND_SET_CSTT;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CNMI?")) != 0) {
-    command_state = COMMAND_TEST_CNMI;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CMGF?")) != 0) {
-    command_state = COMMAND_TEST_CMGF;
-    return;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CLIP=")) != 0) {
-    command_state = COMMAND_WRITE_CLIP;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CMGF=")) != 0) {
-    command_state = COMMAND_WRITE_CMGF;
-    return;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CSCS=")) != 0) {
-    command_state = COMMAND_WRITE_CSCS;
-    return;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CNMI=")) != 0) {
-    command_state = COMMAND_WRITE_CNMI;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CIPMUX?")) != 0) {
-    command_state = COMMAND_TEST_CIPMUX;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CIPSHUT")) != 0) {
-    command_state = COMMAND_CIPSHUT;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CBC")) != 0) {
-    command_state = COMMAND_CBC;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CIICR")) != 0) {
-    command_state = COMMAND_SET_CIICR;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CSQ")) != 0) {
-    command_state = COMMAND_CSQ;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CLTS=")) != 0) {
-    command_state = COMMAND_SET_CLTS;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CCLK?")) != 0) {
-    command_state = COMMAND_TEST_CCLK;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CREG?")) != 0) {
-    command_state = COMMAND_TEST_CREG;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CIFSR")) != 0) {
-    command_state = COMMAND_CIFSR;
-    return;
-  } else if (prog_char_strstr(data, (prog_char *)F("AT+CIPCLOSE")) != 0) {
-    command_state = COMMAND_WRITE_CIPCLOSE;
-    return;    
-  } else if (strstr(data, "AT+CMGS=") != 0) {
-    command_state = COMMAND_WRITE_CMGS;
-    return;
-  } else if (strstr(data, "AT+CIPSTART=") != 0) {
-    command_state = COMMAND_WRITE_CIPSTART;
-    return;
-  } else if (strstr(data, "AT+CIPSEND=") != 0) {
-    command_state = COMMAND_WRITE_CIPSEND;
-    return;
-  } else if (strstr(data, "+CMT:") != 0) {
+  if (strstr(data, "+CMT:") != 0) {
     command_state = COMMAND_UCR_CMT;
     modem_state = STATE_UCR;
   }
@@ -601,16 +604,16 @@ void AsyncGSM::process_modem_data (char * data) {
   if (command_state == COMMAND_WRITE_CIPSEND) {
     if (strstr(data, ">") != 0) {
       // write data
-      int len = bufferSize(&connectionState[currentconnection].outboundCircular);
+      int len = connectionState[currentconnection].outboundBytes;
       char data[len];
-      GSM_DEBUG_PRINT(F("Circular buffer size: "));
-      GSM_DEBUG_PRINTLN(len);
       for (int i = 0; i < len; i++) {
 	readBuffer(&connectionState[currentconnection].outboundCircular, data + i);
-	GSM_DEBUG_PRINT(data[i]);
       }
+      GSM_DEBUG_PRINT(F("Writing to gsm serial"));
+      GSM_DEBUG_PRINTLN(connectionState[currentconnection].outboundBytes);
       mySerial->write(data, len);
       mySerial->flush();
+      GSM_DEBUG_PRINTLN(F("Write ok."));
       return;
     }
 
@@ -650,7 +653,7 @@ void AsyncGSM::process_modem_data (char * data) {
     if (strstr(data, "CLOSE OK") != 0) {
       // tcp or udp connection closed
       uint8_t connectionNumber = parseConnectionNumber(data);
-      connectionState[0].connectionState = GPRS_STATE_IP_INITIAL;
+      connectionState[connectionNumber].connectionState = GPRS_STATE_IP_INITIAL;
       modem_state = STATE_IDLE;
       GSM_DEBUG_PRINTLN(F("STATE_IDLE"));
     }
@@ -772,7 +775,7 @@ void AsyncGSM::process_modem_data (char * data) {
     GSM_DEBUG_PRINTLN(connectionNumber);
     GSM_DEBUG_PRINTLN(availableData);
     command_state = COMMAND_UCR_RECEIVE;
-    GSM_DEBUG_PRINTLN(F("COMMAND_UCR_RECEIVE"))
+    GSM_DEBUG_PRINTLN(F("COMMAND_UCR_RECEIVE"));
     return;
   }
 

@@ -112,6 +112,7 @@ typedef struct {
   CircularBuffer inboundCircular;
   uint8_t connect : 1;
   uint8_t type : 1;
+  uint8_t outboundBytes;
 } ConnectionState;
 
 typedef struct {
@@ -133,12 +134,18 @@ class AsyncGSM
   void queueAtCommand(char * command, uint32_t timeout);
   uint8_t isModemIdle();
   uint8_t isModemError();
+  uint8_t isModemRegistered();
+  void enableGprs();
+  void disableGprs();
+  uint8_t isGprsEnabled();
+  uint8_t isGprsDisabled();
   void connect(char * ipaddress, int port, int connection, int type);
   void disconnect(int connection);
   uint8_t isConnected(int connection);
   uint8_t writeData(char * data, int len, int connection);
   uint8_t messageAvailable();
   uint8_t dataAvailable(int connection);
+  uint8_t outboundBufferSize(int connection);
   ShortMessage readMessage();
   void sendMessage(ShortMessage message);
   time_t getCurrentTime();
@@ -169,6 +176,7 @@ class AsyncGSM
   int8_t cipqsend;
   int8_t gprs_state;
   int8_t gprs_active;
+  uint8_t enable_gprs;
   int8_t ip_address;
   int8_t echo;
   int8_t cnmi;
