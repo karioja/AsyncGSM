@@ -77,6 +77,9 @@ typedef unsigned long time_t;
 #define COMMAND_ATA 26
 #define COMMAND_WRITE_CIPCLOSE 27
 #define COMMAND_UCR_RECEIVE 28
+#define COMMAND_ENABLE_POWERSAVE 29
+#define COMMAND_DISABLE_POWERSAVE 30
+
 
 #define NELEMS(x)  (sizeof(x) / sizeof((x)[0]))
 
@@ -137,6 +140,8 @@ class AsyncGSM
   uint8_t isModemRegistered();
   void enableGprs();
   void disableGprs();
+  void enablePowerSave();
+  void disablePowerSave();
   uint8_t isGprsEnabled();
   uint8_t isGprsDisabled();
   void connect(char * ipaddress, int port, int connection, int type);
@@ -177,6 +182,8 @@ class AsyncGSM
   int8_t gprs_state;
   int8_t gprs_active;
   uint8_t enable_gprs;
+  uint8_t enable_powersave;
+  uint8_t powersave;
   int8_t ip_address;
   int8_t echo;
   int8_t cnmi;

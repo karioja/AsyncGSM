@@ -181,6 +181,18 @@ void AsyncGSM::process() {
   } else if (creg < 2) {
     return;
   }
+
+  if (modem_state == STATE_IDLE && autobauding && !powersave && enable_powersave) {
+    queueAtCommand(F("AT+CSCLK=1"), 5000);
+    command_state = COMMAND_ENABLE_POWERSAVE;
+    return;
+  }
+
+  if (modem_state == STATE_IDLE && autobauding && powersave && !enable_powersave) {
+    queueAtCommand(F("AT+CSCLK=0"), 5000);
+    command_state = COMMAND_DISABLE_POWERSAVE;
+    return;
+  }  
   
   if (modem_state == STATE_IDLE && !clts && autobauding) {
     queueAtCommand(F("AT+CLTS=1"), 5000);
@@ -377,6 +389,14 @@ void AsyncGSM::enableGprs() {
 
 void AsyncGSM::disableGprs() {
   enable_gprs = 0;
+}
+
+void AsyncGSM::enablePowerSave() {
+  enable_powersave = 1;
+}
+
+void AsyncGSM::disablePowerSave() {
+  enable_powersave = 0;
 }
 
 uint8_t AsyncGSM::isGprsEnabled() {
@@ -698,6 +718,14 @@ void AsyncGSM::process_modem_data (char * data) {
       autobauding = 1;
     }
 
+    if (command_state == COMMAND_ENABLE_POWERSAVE) {
+      powersave = 1;
+    }
+
+    if (command_state == COMMAND_DISABLE_POWERSAVE) {
+      powersave = 0;
+    }
+    
     if (command_state == COMMAND_ATA) {
       callinprogress = 1;
       answerincomingcall = 0;
@@ -751,6 +779,11 @@ void AsyncGSM::process_modem_data (char * data) {
     incomingcall = 0;
     callinprogress = 0;
     answerincomingcall = 0;
+  }
+
+  if (strstr(data, "SMS Ready") != 0) {
+    GSM_DEBUG_PRINTLN(F("resetModemState()"));
+    resetModemState();
   }
   
   if (strstr(data, "ERROR") != 0) {
