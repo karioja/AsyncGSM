@@ -8,10 +8,17 @@
 #define GSM_DEBUG_PRINT(...) debugStream->print(__VA_ARGS__)
 #define GSM_DEBUG_PRINTLN(...) debugStream->println(__VA_ARGS__)
 
-AsyncGSM::AsyncGSM(int8_t rst)
+AsyncGSM::AsyncGSM(uint8_t reset, uint8_t pstat, uint8_t key)
 {
   ok_reply = F("OK");
-  rstpin = rst;
+  pinMode(reset, OUTPUT);
+  pinMode(pstat, INPUT);
+  pinMode(key, OUTPUT);
+  digitalWrite(key, HIGH);
+  this->power_state = digitalRead(pstat);
+  this->reset = reset;
+  this->pstat = pstat;
+  this->key = key;
   modem_state = STATE_IDLE;
   autobauding = 0;
   echo = 0;
@@ -19,6 +26,46 @@ AsyncGSM::AsyncGSM(int8_t rst)
   command_state = COMMAND_NONE;
   currentconnection = -1;
   command_timeout = 10000;
+}
+
+void AsyncGSM::setPower(uint8_t power) {
+  this->power = power;
+  uint8_t current_power = digitalRead(pstat);
+  //GSM_DEBUG_PRINTLN(F("setPower: "));
+  //GSM_DEBUG_PRINTLN(power);
+  //GSM_DEBUG_PRINTLN(current_power);
+}
+
+uint8_t AsyncGSM::handlePowerState() {
+  uint8_t current_power = digitalRead(pstat);
+  if (!current_power && power && power_state == POWER_STATE_OFF) {
+    // start turning on
+    GSM_DEBUG_PRINT(F("Turning on. Current power: "));
+    GSM_DEBUG_PRINTLN(current_power);
+    power_state = POWER_STATE_STARTING;
+    digitalWrite(key, LOW);
+    power_state_changed = millis();
+    return 0;
+  } else if (current_power && !power && power_state == POWER_STATE_ON) {
+    // start turning off
+    GSM_DEBUG_PRINT(F("Turning off. Current power: "));
+    GSM_DEBUG_PRINTLN(current_power);
+    power_state = POWER_STATE_STOPPING;
+    digitalWrite(key, LOW);
+    power_state_changed = millis();
+    return 0;
+  } else if ((power_state == POWER_STATE_STOPPING || power_state == POWER_STATE_STARTING) && millis() > (power_state_changed + 3000)) {
+    // stop "pressing" key and reset power_state
+    GSM_DEBUG_PRINTLN(F("Release key button"));
+    digitalWrite(key, HIGH);
+    power_state = digitalRead(pstat);
+    GSM_DEBUG_PRINT(F("current_power: "));
+    GSM_DEBUG_PRINTLN(power_state);
+    resetModemState();
+    return power_state;
+  }
+
+  return current_power;
 }
 
 void AsyncGSM::resetModemState() {
@@ -132,7 +179,14 @@ void AsyncGSM::hangupCall() {
 
 // state machine
 void AsyncGSM::process() {
-  while(mySerial->available()) {
+
+  uint8_t current_power = handlePowerState();
+  if (!current_power) {
+    return;
+  }
+
+  
+  if(mySerial->available() > 0) {
     processIncomingModemByte(mySerial->read());
   }
 
@@ -424,8 +478,6 @@ uint8_t AsyncGSM::writeData(char * data, int len, int connection) {
   for (int i = 0; i < len; i++) {
     writeBuffer(&connectionState[connection].outboundCircular, data[i]);
   }
-  //GSM_DEBUG_PRINTLN(connectionState[connection].outboundCircular.buffer);
-  //GSM_DEBUG_PRINTLN(bufferSize(&connectionState[connection].outboundCircular));
 }
 
 void AsyncGSM::queueAtCommand(char * command, uint32_t timeout) {

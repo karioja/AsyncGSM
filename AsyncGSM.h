@@ -18,6 +18,12 @@ typedef unsigned long time_t;
 
 #define GSM_BUFFER_SIZE 128
 
+#define POWER_STATE_OFF 0
+#define POWER_STATE_ON 1
+#define POWER_STATE_STARTING 2
+#define POWER_STATE_STOPPING 3
+
+
 /* Useful Constants */
 #define SECS_PER_MIN  (60UL)
 #define SECS_PER_HOUR (3600UL)
@@ -128,7 +134,7 @@ typedef struct {
 class AsyncGSM
 {
  public:
-  AsyncGSM(int8_t rst);
+  AsyncGSM(uint8_t rst, uint8_t pstat, uint8_t key);
   uint8_t initialize(Stream &serial);
   void resetModemState();
   void setDebugStream(Stream &debugStream);
@@ -158,7 +164,9 @@ class AsyncGSM
   char * getCallerIdentification();
   void answerIncomingCall();
   void hangupCall();
+  void setPower(uint8_t power);
  protected:
+  uint8_t handlePowerState();
   void processIncomingModemByte (const byte inByte);
   void process_modem_data (char * data);
   GSMFlashStringPtr ok_reply;
@@ -173,7 +181,6 @@ class AsyncGSM
   time_t parseTime(char * timeString);
   char input_modem_line [MAX_INPUT];
   uint8_t input_modem_pos = 0;
-  int8_t rstpin;
   int8_t modem_state;
   int8_t command_state;
   int8_t autobauding;
@@ -208,6 +215,16 @@ class AsyncGSM
   uint32_t last_network_time_update;
   uint32_t command_timeout;
   char callerId[14];
+
+  // power status
+  uint8_t power_state;
+  uint8_t power;
+  uint32_t power_state_changed;
+
+  // fona pins
+  uint8_t reset;
+  uint8_t pstat;
+  uint8_t key;
 };
 
 #endif
